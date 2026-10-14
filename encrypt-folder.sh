@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 #
-# encrypt-folder.sh — password-protect a folder as an encrypted .dmg (macOS).
+# encrypt-folder.sh — password-protect a file or folder as an encrypted .dmg (macOS).
 #
 # Does the same thing as Disk Utility > File > New Image > Image from Folder,
 # then verifies the image opens and its contents match the original, and
 # (optionally) moves the unencrypted original to the Trash.
 #
 # Usage:
-#   ./encrypt-folder.sh [options] <folder>
+#   ./encrypt-folder.sh [options] <file-or-folder>
 #
 # Options:
-#   -o <file.dmg>   Output path (default: <folder>.dmg next to the folder)
+#   -o <file.dmg>   Output path (default: <name>.dmg next to the original;
+#                   for a file, the extension is dropped: taxes.pdf -> taxes.dmg)
 #   -a 128|256      AES key size (default: 256)
 #   -w              Read/write image (can add/change files later).
 #                   Default is read-only (compressed).
-#   -t              After a successful verify, move the original folder to
-#                   the Trash (asks for confirmation first).
+#   -t              After a successful verify, move the original file or
+#                   folder to the Trash (asks for confirmation first).
 #   -h              Show this help.
 #
 # Opening the image later: double-click the .dmg, enter the password, and a
@@ -23,7 +24,7 @@
 
 set -euo pipefail
 
-usage() { sed -n '3,22p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 die()   { echo "Error: $*" >&2; exit 1; }
 
 out=""
@@ -48,11 +49,19 @@ shift $((OPTIND - 1))
 
 [[ $# -eq 1 ]] || usage 1
 src="${1%/}"
-[[ -d "$src" ]] || die "'$src' is not a folder."
+[[ -e "$src" ]] || die "'$src' does not exist."
+[[ -d "$src" || -f "$src" ]] || die "'$src' is not a file or folder."
 [[ "$aes" == "128" || "$aes" == "256" ]] || die "-a must be 128 or 256."
 
 name="$(basename "$src")"
-[[ -n "$out" ]] || out="$(dirname "$src")/$name.dmg"
+if [[ -f "$src" ]]; then
+  what="file"
+  volname="${name%.*}"; [[ -n "$volname" ]] || volname="$name"   # taxes.pdf -> taxes
+else
+  what="folder"
+  volname="$name"
+fi
+[[ -n "$out" ]] || out="$(dirname "$src")/$volname.dmg"
 [[ "$out" == *.dmg ]] || out="$out.dmg"
 [[ ! -e "$out" ]] || die "'$out' already exists; pick another name with -o."
 
@@ -64,12 +73,26 @@ read -r -s -p "Verify password: " pw2; echo
 unset pw2
 (( ${#pw} >= 8 )) || echo "Warning: that password is short; 12+ characters is much safer." >&2
 
+# --- Stage a single file in its own folder (hdiutil images a folder) ---------
+# A hard link avoids leaving an extra unencrypted copy; fall back to a copy if
+# the temp folder is on another disk. Either way it's removed when we exit.
+stage=""
+if [[ "$what" == "file" ]]; then
+  stage="$(mktemp -d)"
+  ln "$src" "$stage/$name" 2>/dev/null || cp -p "$src" "$stage/$name"
+  srcdir="$stage"
+else
+  srcdir="$src"
+fi
+remove_stage() { [[ -z "$stage" ]] || rm -rf "$stage"; }
+trap remove_stage EXIT
+
 # --- Create the encrypted image ----------------------------------------------
 [[ "$format" == "UDRW" ]] && kind="read/write" || kind="read-only"
 echo "Creating $kind AES-$aes image: $out"
 printf '%s\0' "$pw" | hdiutil create \
-  -srcfolder "$src" \
-  -volname "$name" \
+  -srcfolder "$srcdir" \
+  -volname "$volname" \
   -encryption "AES-$aes" \
   -stdinpass \
   -format "$format" \
@@ -93,6 +116,7 @@ cleanup() {
       || echo "WARNING: could not unmount the image. Run: hdiutil detach -force \"$mnt\"" >&2
   fi
   rmdir "$mnt" 2>/dev/null || true
+  remove_stage
 }
 trap cleanup EXIT
 
@@ -100,11 +124,11 @@ printf '%s\0' "$pw" | hdiutil attach "$out" \
   -stdinpass -readonly -nobrowse -mountpoint "$mnt" >/dev/null
 unset pw
 
-if diff -rq "$src" "$mnt" >/dev/null 2>&1; then
+if diff -rq "$srcdir" "$mnt" >/dev/null 2>&1; then
   echo "OK: image opened with your password and all files match."
 else
-  echo "WARNING: contents differ from the original. Keeping the original folder." >&2
-  diff -rq "$src" "$mnt" >&2 || true
+  echo "WARNING: contents differ from the original. Keeping the original $what." >&2
+  diff -rq "$srcdir" "$mnt" >&2 || true
   exit 1
 fi
 cleanup
@@ -112,9 +136,9 @@ trap - EXIT
 
 # --- Optionally trash the unencrypted original -------------------------------
 if (( trash )); then
-  read -r -p "Move the original folder '$src' to the Trash? [y/N] " ans
+  read -r -p "Move the original $what '$src' to the Trash? [y/N] " ans
   if [[ "$ans" =~ ^[Yy]$ ]]; then
-    abs="$(cd "$src" && pwd)"
+    abs="$(cd "$(dirname "$src")" && pwd)/$name"
     abs="${abs//\\/\\\\}"; abs="${abs//\"/\\\"}"   # escape for AppleScript
     osascript -e "tell application \"Finder\" to delete POSIX file \"$abs\"" >/dev/null
     echo "Moved to Trash (empty the Trash to remove it for good)."
