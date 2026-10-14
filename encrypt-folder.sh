@@ -74,15 +74,17 @@ unset pw2
 (( ${#pw} >= 8 )) || echo "Warning: that password is short; 12+ characters is much safer." >&2
 
 # --- Stage a single file in its own folder (hdiutil images a folder) ---------
-# A hard link avoids leaving an extra unencrypted copy; fall back to a copy if
-# the temp folder is on another disk. Either way it's removed when we exit.
+# Use a real copy, never a hard link: with a hard link the original and the
+# staged file are the same file, and syncing services (e.g. iCloud Desktop)
+# can treat removing the temp folder as deleting the original. The copy is
+# removed when we exit.
 stage=""
 if [[ "$what" == "file" ]]; then
   stage="$(mktemp -d)"
   # mktemp makes the folder private (700); it becomes the image's top level,
   # so give it normal folder permissions or the opened image is unreadable.
   chmod 755 "$stage"
-  ln "$src" "$stage/$name" 2>/dev/null || cp -p "$src" "$stage/$name"
+  cp -p "$src" "$stage/$name"
   srcdir="$stage"
 else
   srcdir="$src"
