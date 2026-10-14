@@ -79,6 +79,9 @@ unset pw2
 stage=""
 if [[ "$what" == "file" ]]; then
   stage="$(mktemp -d)"
+  # mktemp makes the folder private (700); it becomes the image's top level,
+  # so give it normal folder permissions or the opened image is unreadable.
+  chmod 755 "$stage"
   ln "$src" "$stage/$name" 2>/dev/null || cp -p "$src" "$stage/$name"
   srcdir="$stage"
 else
