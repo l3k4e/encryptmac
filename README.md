@@ -38,3 +38,15 @@ Double-click the `.dmg`, enter the password, and a drive appears in Finder.
 Eject it when you're done.
 
 > There is no way to recover the files if you forget the password.
+
+## "It opened without asking for a password"
+
+- **You opened the original folder, not the `.dmg`.** The script leaves the
+  original folder unencrypted unless you use `-t`. Only the `.dmg` is protected.
+- **The image is still mounted.** If a drive with the folder's name is in the
+  Finder sidebar, double-clicking the `.dmg` just shows it. Eject it first.
+- **The password was saved in your Keychain.** If you ticked "Remember password"
+  when opening it, macOS won't ask again. Open *Keychain Access*, search for the
+  `.dmg` name, and delete that entry.
+
+To confirm a file is encrypted: `hdiutil isencrypted yourfile.dmg` should print `encrypted: YES`.

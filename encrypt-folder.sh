@@ -75,10 +75,25 @@ printf '%s\0' "$pw" | hdiutil create \
   -format "$format" \
   "$out" >/dev/null
 
+# Make sure the image really is encrypted before going any further.
+if ! hdiutil isencrypted "$out" 2>/dev/null | grep -q 'encrypted: YES'; then
+  rm -f "$out"
+  die "the image was created WITHOUT encryption; deleted it. Nothing else was changed."
+fi
+
 # --- Verify: mount it with the password and compare contents -----------------
 echo "Verifying the image opens and matches the original..."
 mnt="$(mktemp -d)"
-cleanup() { hdiutil detach "$mnt" -quiet 2>/dev/null || true; rmdir "$mnt" 2>/dev/null || true; }
+# Unmount the image. If it stayed mounted, double-clicking the .dmg would open it
+# WITHOUT asking for the password, so retry with -force and complain loudly.
+cleanup() {
+  if mount | grep -q " on $mnt "; then
+    hdiutil detach "$mnt" -quiet 2>/dev/null \
+      || { sleep 2; hdiutil detach "$mnt" -force -quiet 2>/dev/null; } \
+      || echo "WARNING: could not unmount the image. Run: hdiutil detach -force \"$mnt\"" >&2
+  fi
+  rmdir "$mnt" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 printf '%s\0' "$pw" | hdiutil attach "$out" \
