@@ -1,0 +1,5 @@
+# macOS Finder metadata
+.DS_Store
+
+# Never commit encrypted images (they may contain private files)
+*.dmg
