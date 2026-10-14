@@ -79,6 +79,9 @@ unset pw2
 stage=""
 if [[ "$what" == "file" ]]; then
   stage="$(mktemp -d)"
+  # mktemp makes the folder private (700); it becomes the image's top level,
+  # so give it normal folder permissions or the opened image is unreadable.
+  chmod 755 "$stage"
   ln "$src" "$stage/$name" 2>/dev/null || cp -p "$src" "$stage/$name"
   srcdir="$stage"
 else
@@ -99,7 +102,10 @@ printf '%s\0' "$pw" | hdiutil create \
   "$out" >/dev/null
 
 # Make sure the image really is encrypted before going any further.
-if ! hdiutil isencrypted "$out" 2>/dev/null | grep -q 'encrypted: YES'; then
+# (Captured into a variable, not piped into grep: with pipefail, grep -q exiting
+# early can make the pipeline "fail" and wrongly delete a good image.)
+enc="$(hdiutil isencrypted "$out" 2>/dev/null || true)"
+if [[ "$enc" != *"encrypted: YES"* ]]; then
   rm -f "$out"
   die "the image was created WITHOUT encryption; deleted it. Nothing else was changed."
 fi
@@ -109,13 +115,17 @@ echo "Verifying the image opens and matches the original..."
 mnt="$(mktemp -d)"
 # Unmount the image. If it stayed mounted, double-clicking the .dmg would open it
 # WITHOUT asking for the password, so retry with -force and complain loudly.
+# (rmdir fails on a folder that is still a mount point, so it doubles as the
+# "is it still mounted?" check; matching `mount` output is unreliable on macOS
+# because mktemp's /var/... path shows up there as /private/var/....)
 cleanup() {
-  if mount | grep -q " on $mnt "; then
+  if ! rmdir "$mnt" 2>/dev/null; then
     hdiutil detach "$mnt" -quiet 2>/dev/null \
       || { sleep 2; hdiutil detach "$mnt" -force -quiet 2>/dev/null; } \
+      || true
+    rmdir "$mnt" 2>/dev/null \
       || echo "WARNING: could not unmount the image. Run: hdiutil detach -force \"$mnt\"" >&2
   fi
-  rmdir "$mnt" 2>/dev/null || true
   remove_stage
 }
 trap cleanup EXIT
