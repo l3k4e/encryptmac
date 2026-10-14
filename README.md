@@ -1,6 +1,6 @@
 # encryptmac
 
-Password-protect a folder as an encrypted `.dmg` on macOS, in one command.
+Password-protect a file or folder as an encrypted `.dmg` on macOS, in one command.
 
 It does the same thing as **Disk Utility > File > New Image > Image from Folder**
 with encryption, then checks that the image opens with your password and that
@@ -20,14 +20,15 @@ chmod +x encrypt-folder.sh
 ./encrypt-folder.sh -a 128 ~/Desktop/Private           # AES-128 (faster) instead of AES-256
 ./encrypt-folder.sh -o ~/Documents/vault.dmg ~/Desktop/Private   # choose the output file
 ./encrypt-folder.sh -t ~/Desktop/Private               # after verifying, offer to move the original to the Trash
+./encrypt-folder.sh -t ~/Desktop/taxes.pdf             # a single file → ~/Desktop/taxes.dmg
 ```
 
 | Option | Meaning |
 |---|---|
-| `-o <file.dmg>` | Output path (default: `<folder>.dmg` next to the folder) |
+| `-o <file.dmg>` | Output path (default: `<name>.dmg` next to the original; `taxes.pdf` → `taxes.dmg`) |
 | `-a 128\|256` | AES key size (default: 256) |
 | `-w` | Read/write image (default: read-only, compressed) |
-| `-t` | Move the original folder to the Trash after a successful check (asks first) |
+| `-t` | Move the original file or folder to the Trash after a successful check (asks first) |
 | `-h` | Help |
 
 The password is typed twice and never shown, stored, or passed on the command line.
